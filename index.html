@@ -905,17 +905,16 @@ function getAxisRange(box) {
 
 function setupClipRange(box) {
   var range = getAxisRange(box);
-  var step = ((range.max - range.min) / 200).toFixed(2);
 
   clipMinSlider.min = range.min.toFixed(1);
   clipMinSlider.max = range.max.toFixed(1);
-  clipMinSlider.step = step;
+  clipMinSlider.step = 'any';
   clipMinSlider.value = range.min.toFixed(1);
   clipMinVal.textContent = range.min.toFixed(1);
 
   clipMaxSlider.min = range.min.toFixed(1);
   clipMaxSlider.max = range.max.toFixed(1);
-  clipMaxSlider.step = step;
+  clipMaxSlider.step = 'any';
   clipMaxSlider.value = range.max.toFixed(1);
   clipMaxVal.textContent = range.max.toFixed(1);
 
@@ -1174,11 +1173,15 @@ function animate() {
     }
 
     if (ctDirMin !== 0 || ctDirMax !== 0) {
+      // Update clip planes directly from float positions to avoid slider's step quantization
+      // (the slider's step is (range/200).toFixed(2) which causes visible jumps at slow speeds)
+      clipPlaneMin.constant = -ctPosMin;
+      clipPlaneMax.constant = ctPosMax;
+      // Reflect value on slider UI (will be snapped to step, but that's only cosmetic)
       clipMinSlider.value = ctPosMin;
       clipMaxSlider.value = ctPosMax;
       clipMinVal.textContent = ctPosMin.toFixed(1);
       clipMaxVal.textContent = ctPosMax.toFixed(1);
-      updateClipPlanes();
     }
 
     // Auto camera movement
