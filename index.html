@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Building Walker</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #crosshair {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px; height: 20px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,0.5);
+  }
+  #crosshair::before {
+    width: 2px; height: 20px;
+    left: 9px; top: 0;
+  }
+  #crosshair::after {
+    width: 20px; height: 2px;
+    left: 0; top: 9px;
+  }
+  #side-panel {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 220px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-family: sans-serif;
+    font-size: 13px;
+    padding: 20px 16px;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+  }
+  #side-panel .help-section h2 {
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+  #side-panel .help-section p {
+    font-size: 13px;
+    color: #aaa;
+    line-height: 1.8;
+  }
+  #side-panel hr {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    margin: 14px 0;
+  }
+  #loading {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-family: sans-serif;
+    font-size: 18px;
+    z-index: 30;
+  }
+  #loading.hidden { display: none; }
+  #webgl-context-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    color: #fff;
+    font-family: sans-serif;
+    font-size: 18px;
+    z-index: 50;
+  }
+  #webgl-context-overlay.hidden { display: none; }
+  #webgl-reload-btn {
+    display: none;
+    padding: 12px 32px;
+    font-size: 16px;
+    background: #4af;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  #webgl-reload-btn:hover { background: #5bf; }
+  #loading {
+    text-align: center;
+  }
+  #loading-text {
+    margin-bottom: 16px;
+  }
+  #progress-bar-container {
+    width: 300px;
+    height: 8px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  #progress-bar {
+    width: 0%;
+    height: 100%;
+    background: #4af;
+    border-radius: 4px;
+    transition: width 0.1s;
+  }
+  #progress-text {
+    font-size: 14px;
+    color: #aaa;
+  }
+  #file-select {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: sans-serif;
+    z-index: 40;
+    background: rgba(0,0,0,0.85);
+  }
+  #file-select.hidden { display: none; }
+  #file-select h1 { font-size: 24px; margin-bottom: 20px; }
+  #settings-panel {
+    width: 400px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  #settings-panel .preset-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  #settings-panel .preset-btn {
+    flex: 1;
+    padding: 8px 4px;
+    font-size: 12px;
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  #settings-panel .preset-btn:hover { background: #444; }
+  #settings-panel .preset-btn.selected {
+    background: #4af;
+    color: #000;
+    border-color: #4af;
+    font-weight: bold;
+  }
+  #settings-panel .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  #settings-panel .setting-row:last-child { margin-bottom: 0; }
+  #settings-panel .setting-row label {
+    color: #ccc;
+    font-size: 13px;
+  }
+  #settings-panel select {
+    background: #222;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  #settings-panel input[type="checkbox"] {
+    accent-color: #4af;
+    margin-right: 6px;
+  }
+  #settings-panel .settings-hint {
+    font-size: 11px;
+    color: #888;
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+  #drop-zone {
+    width: 400px;
+    height: 200px;
+    border: 2px dashed #666;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #drop-zone.drag-over {
+    border-color: #4af;
+    background: rgba(68,170,255,0.1);
+  }
+  #drop-zone p { font-size: 14px; color: #aaa; }
+  #file-btn {
+    padding: 12px 32px;
+    font-size: 16px;
+    background: #4af;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  #file-btn:hover { background: #5bf; }
+  #file-input { display: none; }
+  #side-panel .controls-section label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+  #side-panel .controls-section label:last-child { margin-bottom: 0; }
+  #side-panel .controls-section input[type="range"] {
+    width: 100px;
+    accent-color: #4af;
+    flex-shrink: 1;
+  }
+  #side-panel .controls-section .val {
+    min-width: 36px;
+    text-align: right;
+    color: #aaa;
+    font-size: 12px;
+  }
+  #side-panel .controls-section .section-check {
+    margin-bottom: 6px;
+  }
+  #side-panel .controls-section .section-check input { margin-right: 6px; }
+  .clip-axis-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .clip-axis-row label {
+    display: flex !important;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 0 !important;
+    cursor: pointer;
+  }
+  .clip-axis-row input[type="radio"] {
+    accent-color: #4af;
+  }
+  #ct-scan-btn {
+    width: 100%;
+    padding: 6px 0;
+    font-size: 12px;
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 6px;
+  }
+  #ct-scan-btn:hover { background: #444; }
+  #ct-scan-btn.active {
+    background: #4af;
+    color: #000;
+    border-color: #4af;
+    font-weight: bold;
+  }
+  .ct-dir-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+  .ct-dir-row span.ct-dir-label {
+    color: #aaa;
+    min-width: 32px;
+  }
+  .dir-btn-group {
+    display: flex;
+    gap: 2px;
+  }
+  .dir-btn {
+    width: 28px;
+    height: 24px;
+    font-size: 12px;
+    background: #333;
+    color: #aaa;
+    border: 1px solid #555;
+    cursor: pointer;
+    padding: 0;
+    line-height: 24px;
+    text-align: center;
+  }
+  .dir-btn:first-child { border-radius: 3px 0 0 3px; }
+  .dir-btn:last-child { border-radius: 0 3px 3px 0; }
+  .dir-btn:hover { background: #444; }
+  .dir-btn.selected {
+    background: #4af;
+    color: #000;
+    border-color: #4af;
+  }
+</style>
+</head>
+<body>
+
+<div id="file-select">
+  <h1>3D Building Walker</h1>
+  <div id="settings-panel">
+    <div class="preset-row">
+      <button class="preset-btn" data-preset="low">低メモリ</button>
+      <button class="preset-btn selected" data-preset="standard">標準</button>
+      <button class="preset-btn" data-preset="high">高品質</button>
+    </div>
+    <div class="setting-row">
+      <label>テクスチャ上限</label>
+      <select id="setting-tex-size">
+        <option value="512">512px</option>
+        <option value="1024">1024px</option>
+        <option value="2048" selected>2048px</option>
+        <option value="4096">4096px</option>
+        <option value="0">元のサイズ</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>シャドウ品質</label>
+      <select id="setting-shadow">
+        <option value="0">無効</option>
+        <option value="1024">低 (1024)</option>
+        <option value="2048" selected>標準 (2048)</option>
+        <option value="4096">高 (4096)</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>ピクセル比</label>
+      <select id="setting-pixel-ratio">
+        <option value="1">1x (低負荷)</option>
+        <option value="auto" selected>自動</option>
+        <option value="2">2x (高精細)</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label><input type="checkbox" id="setting-antialias" checked>アンチエイリアス</label>
+    </div>
+    <div class="settings-hint">低メモリ: 8GB環境向け / 高品質: 広報撮影向け</div>
+  </div>
+  <div id="drop-zone">
+    <button id="file-btn">GLBファイルを選択</button>
+    <p>またはここにドラッグ&ドロップ</p>
+  </div>
+  <input type="file" id="file-input" accept=".glb,.gltf">
+</div>
+<div id="loading" class="hidden">
+  <div id="loading-text">読み込み中...</div>
+  <div id="progress-bar-container">
+    <div id="progress-bar"></div>
+  </div>
+  <div id="progress-text">0%</div>
+</div>
+<div id="side-panel">
+  <div class="help-section">
+    <h2>操作方法</h2>
+    <p>
+      WASD: 移動<br>
+      マウス: 視点操作<br>
+      E: 上昇 / Space: 下降<br>
+      ESC: ポインターロック解除
+    </p>
+  </div>
+  <hr>
+  <div class="controls-section">
+    <label>
+      <span>速度</span>
+      <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1">
+      <span class="val" id="speed-val">1.0</span>
+    </label>
+    <label>
+      <span>明るさ</span>
+      <input type="range" id="bright-slider" min="0" max="5" step="0.05" value="3">
+      <span class="val" id="bright-val">3.00</span>
+    </label>
+    <div class="section-check">
+      <label style="margin-bottom:0">
+        <span><input type="checkbox" id="shadow-enable" checked>シャドウ</span>
+      </label>
+    </div>
+    <hr>
+    <div class="section-check">
+      <label style="margin-bottom:0">
+        <span><input type="checkbox" id="clip-enable">断面表示</span>
+      </label>
+    </div>
+    <div id="clip-controls" style="display:none">
+      <div class="clip-axis-row">
+        <label><input type="radio" name="clip-axis" value="x"> X</label>
+        <label><input type="radio" name="clip-axis" value="y" checked> Y</label>
+        <label><input type="radio" name="clip-axis" value="z"> Z</label>
+      </div>
+      <label>
+        <span>下限</span>
+        <input type="range" id="clip-min-slider" min="0" max="100" step="0.1" value="0">
+        <span class="val" id="clip-min-val">0.0</span>
+      </label>
+      <label>
+        <span>上限</span>
+        <input type="range" id="clip-max-slider" min="0" max="100" step="0.1" value="100">
+        <span class="val" id="clip-max-val">100.0</span>
+      </label>
+      <hr style="margin:10px 0 8px">
+      <div style="font-size:12px;color:#aaa;margin-bottom:6px">CTスキャン</div>
+      <div class="ct-dir-row">
+        <span class="ct-dir-label">下限</span>
+        <div class="dir-btn-group">
+          <button class="dir-btn" data-target="min" data-dir="-1">▼</button>
+          <button class="dir-btn selected" data-target="min" data-dir="0">■</button>
+          <button class="dir-btn" data-target="min" data-dir="1">▲</button>
+        </div>
+      </div>
+      <div class="ct-dir-row">
+        <span class="ct-dir-label">上限</span>
+        <div class="dir-btn-group">
+          <button class="dir-btn" data-target="max" data-dir="-1">▼</button>
+          <button class="dir-btn" data-target="max" data-dir="0">■</button>
+          <button class="dir-btn selected" data-target="max" data-dir="1">▲</button>
+        </div>
+      </div>
+      <hr style="margin:8px 0 6px">
+      <div style="font-size:12px;color:#aaa;margin-bottom:6px">視点移動</div>
+      <div class="ct-dir-row">
+        <span class="ct-dir-label">前後</span>
+        <div class="dir-btn-group">
+          <button class="dir-btn" data-target="cam-fb" data-dir="-1">S</button>
+          <button class="dir-btn selected" data-target="cam-fb" data-dir="0">■</button>
+          <button class="dir-btn" data-target="cam-fb" data-dir="1">W</button>
+        </div>
+      </div>
+      <div class="ct-dir-row">
+        <span class="ct-dir-label">左右</span>
+        <div class="dir-btn-group">
+          <button class="dir-btn" data-target="cam-lr" data-dir="-1">A</button>
+          <button class="dir-btn selected" data-target="cam-lr" data-dir="0">■</button>
+          <button class="dir-btn" data-target="cam-lr" data-dir="1">D</button>
+        </div>
+      </div>
+      <div class="ct-dir-row">
+        <span class="ct-dir-label">上下</span>
+        <div class="dir-btn-group">
+          <button class="dir-btn" data-target="cam-ud" data-dir="-1">Sp</button>
+          <button class="dir-btn selected" data-target="cam-ud" data-dir="0">■</button>
+          <button class="dir-btn" data-target="cam-ud" data-dir="1">E</button>
+        </div>
+      </div>
+      <button id="ct-scan-btn">▶ 開始</button>
+    </div>
+  </div>
+</div>
+<div id="webgl-context-overlay" class="hidden">
+  <div id="webgl-overlay-text">WebGLコンテキストを復元中...</div>
+  <button id="webgl-reload-btn" onclick="location.reload()">ページを再読み込み</button>
+</div>
+<div id="crosshair"></div>
+
+<script src="three.min.js"></script>
+<script src="GLTFLoader.js"></script>
+<script src="DRACOLoader.js"></script>
+
+<script>
+var T = THREE;
+var Scene = T.Scene, PerspectiveCamera = T.PerspectiveCamera, WebGLRenderer = T.WebGLRenderer,
+    Color = T.Color, Fog = T.Fog, AmbientLight = T.AmbientLight, DirectionalLight = T.DirectionalLight,
+    HemisphereLight = T.HemisphereLight, Box3 = T.Box3, Vector3 = T.Vector3, Euler = T.Euler,
+    Clock = T.Clock, ACESFilmicToneMapping = T.ACESFilmicToneMapping,
+    GLTFLoader = T.GLTFLoader, DRACOLoader = T.DRACOLoader, Plane = T.Plane;
+
+var bgColor = 0x888888;
+
+var scene = new Scene();
+scene.background = new Color(bgColor);
+scene.fog = new Fog(bgColor, 50, 300);
+
+var camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
+camera.position.set(0, 1.6, 5);
+
+var renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = ACESFilmicToneMapping;
+renderer.toneMappingExposure = 3.0;
+renderer.localClippingEnabled = true;
+document.body.appendChild(renderer.domElement);
+
+// WebGL context lost/restored handling
+var animationId = null;
+var contextLostTimer = null;
+
+function onContextLost(e) {
+  e.preventDefault();
+  console.warn('WebGL context lost. Stopping animation.');
+  if (animationId !== null) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+  var overlay = document.getElementById('webgl-context-overlay');
+  var overlayText = document.getElementById('webgl-overlay-text');
+  var reloadBtn = document.getElementById('webgl-reload-btn');
+  overlayText.textContent = 'WebGLコンテキストを復元中...';
+  reloadBtn.style.display = 'none';
+  overlay.classList.remove('hidden');
+  // If browser doesn't restore within 1s, recreate renderer with reduced settings
+  if (contextLostTimer !== null) clearTimeout(contextLostTimer);
+  contextLostTimer = setTimeout(recreateRenderer, 1000);
+}
+
+function onContextRestored() {
+  console.info('WebGL context restored by browser.');
+  if (contextLostTimer !== null) {
+    clearTimeout(contextLostTimer);
+    contextLostTimer = null;
+  }
+  rebuildSceneMaterials();
+  renderer.shadowMap.needsUpdate = true;
+  var overlay = document.getElementById('webgl-context-overlay');
+  overlay.classList.add('hidden');
+  if (animationId === null) {
+    clock.getDelta();
+    animate();
+  }
+}
+
+function rebuildSceneMaterials() {
+  scene.traverse(function(child) {
+    if (child.isMesh) {
+      var mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(function(mat) { mat.needsUpdate = true; });
+      if (child.geometry) {
+        if (child.geometry.attributes) {
+          Object.values(child.geometry.attributes).forEach(function(attr) {
+            attr.needsUpdate = true;
+          });
+        }
+        if (child.geometry.index) child.geometry.index.needsUpdate = true;
+      }
+    }
+  });
+}
+
+function recreateRenderer(opts) {
+  contextLostTimer = null;
+  // Fallback/recovery defaults: aggressively reduce memory usage
+  var reduceQuality = !opts;
+  var antialias    = opts && opts.antialias !== undefined    ? opts.antialias    : true;
+  var pixelRatio   = opts && opts.pixelRatio !== undefined   ? opts.pixelRatio   : 1;
+  var shadowOn     = opts && opts.shadowEnabled !== undefined ? opts.shadowEnabled : false;
+
+  console.warn('Recreating WebGL renderer', opts ? 'with user settings' : 'with recovery settings');
+  try {
+    var oldCanvas = renderer.domElement;
+    oldCanvas.removeEventListener('webglcontextlost', onContextLost);
+    oldCanvas.removeEventListener('webglcontextrestored', onContextRestored);
+    renderer.dispose();
+
+    if (reduceQuality) {
+      shadowEnable.checked = false;
+      dirLight.castShadow = false;
+    }
+
+    renderer = new WebGLRenderer({ antialias: antialias, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(pixelRatio);
+    renderer.shadowMap.enabled = shadowOn;
+    renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMappingExposure = parseFloat(brightSlider.value);
+    renderer.localClippingEnabled = true;
+
+    oldCanvas.parentNode.replaceChild(renderer.domElement, oldCanvas);
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost, false);
+    renderer.domElement.addEventListener('webglcontextrestored', onContextRestored, false);
+
+    if (reduceQuality) {
+      // Disable shadows on all existing meshes when recovering from context loss
+      scene.traverse(function(child) {
+        if (child.isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+        }
+      });
+    }
+    rebuildSceneMaterials();
+    if (clippingEnabled) applyClipping();
+
+    var overlay = document.getElementById('webgl-context-overlay');
+    overlay.classList.add('hidden');
+
+    clock.getDelta(); // flush stale delta
+    if (animationId === null) animate();
+  } catch (e) {
+    console.error('Failed to recreate renderer:', e);
+    var overlayText = document.getElementById('webgl-overlay-text');
+    var reloadBtn = document.getElementById('webgl-reload-btn');
+    overlayText.textContent = 'WebGLの復元に失敗しました';
+    reloadBtn.style.display = 'block';
+  }
+}
+
+renderer.domElement.addEventListener('webglcontextlost', onContextLost, false);
+renderer.domElement.addEventListener('webglcontextrestored', onContextRestored, false);
+
+// Detect software rendering and suggest low-memory preset
+var maxTextureSize = 2048;
+var isSoftwareRendering = false;
+(function detectRenderer() {
+  var gl = renderer.getContext();
+  var debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  var gpuRenderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
+  var gpuVendor = debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : '';
+  var hwMaxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  console.info('WebGL renderer:', gpuRenderer, '| vendor:', gpuVendor, '| max texture:', hwMaxTex);
+  if (/swiftshader|software|llvmpipe|mesa offscreen/i.test(gpuRenderer)) {
+    console.warn('Software rendering detected — defaulting to low-memory preset.');
+    isSoftwareRendering = true;
+  }
+})();
+
+// Downscale oversized textures to fit in GPU/software memory budget
+function downscaleTextures(root, limit) {
+  var seen = {};
+  root.traverse(function(child) {
+    if (!child.isMesh || !child.material) return;
+    var mats = Array.isArray(child.material) ? child.material : [child.material];
+    mats.forEach(function(mat) {
+      ['map','normalMap','roughnessMap','metalnessMap','aoMap',
+       'emissiveMap','bumpMap','alphaMap','lightMap'].forEach(function(prop) {
+        var tex = mat[prop];
+        if (!tex || !tex.image || seen[tex.uuid]) return;
+        seen[tex.uuid] = true;
+        var img = tex.image;
+        var w = img.width || img.videoWidth || 0;
+        var h = img.height || img.videoHeight || 0;
+        if (w <= limit && h <= limit) return;
+        var scale = limit / Math.max(w, h);
+        var nw = Math.floor(w * scale);
+        var nh = Math.floor(h * scale);
+        var c = document.createElement('canvas');
+        c.width = nw; c.height = nh;
+        c.getContext('2d').drawImage(img, 0, 0, nw, nh);
+        console.info('Downscaled texture', tex.name || tex.uuid, w + 'x' + h, '->', nw + 'x' + nh);
+        tex.image = c;
+        tex.needsUpdate = true;
+      });
+    });
+  });
+}
+
+// Lighting
+var ambientLight = new AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+var dirLight = new DirectionalLight(0xffffff, 1.0);
+dirLight.position.set(30, 50, 30);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 200;
+dirLight.shadow.camera.left = -50;
+dirLight.shadow.camera.right = 50;
+dirLight.shadow.camera.top = 50;
+dirLight.shadow.camera.bottom = -50;
+scene.add(dirLight);
+
+var hemiLight = new HemisphereLight(0x888888, 0x362907, 0.3);
+scene.add(hemiLight);
+
+// Clipping planes: two planes define p < axis < q
+// clipPlaneMin: keeps axis > p (normal points positive, constant = -p)
+// clipPlaneMax: keeps axis < q (normal points negative, constant = q)
+var clipPlaneMin = new Plane(new Vector3(0, 1, 0), 0);
+var clipPlaneMax = new Plane(new Vector3(0, -1, 0), 100);
+var clippingEnabled = false;
+var clipAxis = 'y';
+var ctScanActive = false;
+var ctScanPos = 0;
+
+// GLTFLoader + DRACOLoader
+var loader = new GLTFLoader();
+var dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderConfig({ type: 'js' });
+dracoLoader.setWorkerLimit(4);
+
+var origLoadLibrary = DRACOLoader.prototype._loadLibrary;
+DRACOLoader.prototype._loadLibrary = function(url, responseType) {
+  if (url.indexOf('draco_decoder') !== -1 && responseType === 'text') {
+    return new Promise(function(resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'draco_decoder.js', true);
+      xhr.onload = function() {
+        if (xhr.status === 200 || xhr.status === 0) resolve(xhr.responseText);
+        else reject(new Error('Failed to load DRACO decoder'));
+      };
+      xhr.onerror = function() { reject(new Error('Failed to load DRACO decoder')); };
+      xhr.send();
+    });
+  }
+  return origLoadLibrary.call(this, url, responseType);
+};
+
+loader.setDRACOLoader(dracoLoader);
+
+var fileSelectEl = document.getElementById('file-select');
+var dropZoneEl = document.getElementById('drop-zone');
+var fileBtnEl = document.getElementById('file-btn');
+var fileInputEl = document.getElementById('file-input');
+var loadingEl = document.getElementById('loading');
+var sidePanel = document.getElementById('side-panel');
+
+var speedSlider = document.getElementById('speed-slider');
+var speedVal = document.getElementById('speed-val');
+var brightSlider = document.getElementById('bright-slider');
+var brightVal = document.getElementById('bright-val');
+var clipEnable = document.getElementById('clip-enable');
+var clipControls = document.getElementById('clip-controls');
+var clipMinSlider = document.getElementById('clip-min-slider');
+var clipMaxSlider = document.getElementById('clip-max-slider');
+var clipMinVal = document.getElementById('clip-min-val');
+var clipMaxVal = document.getElementById('clip-max-val');
+var ctScanBtn = document.getElementById('ct-scan-btn');
+var shadowEnable = document.getElementById('shadow-enable');
+var loadingTextEl = document.getElementById('loading-text');
+var progressBarEl = document.getElementById('progress-bar');
+var progressTextEl = document.getElementById('progress-text');
+
+// Pre-load settings UI
+var settingTexSize = document.getElementById('setting-tex-size');
+var settingShadow = document.getElementById('setting-shadow');
+var settingPixelRatio = document.getElementById('setting-pixel-ratio');
+var settingAntialias = document.getElementById('setting-antialias');
+
+var moveSpeed = 1.0;
+var modelBounds = null;
+
+speedSlider.addEventListener('input', function() {
+  moveSpeed = parseFloat(speedSlider.value);
+  speedVal.textContent = moveSpeed.toFixed(1);
+});
+
+brightSlider.addEventListener('input', function() {
+  var v = parseFloat(brightSlider.value);
+  brightVal.textContent = v.toFixed(2);
+  renderer.toneMappingExposure = v;
+});
+
+clipEnable.addEventListener('change', function() {
+  clippingEnabled = clipEnable.checked;
+  clipControls.style.display = clippingEnabled ? 'block' : 'none';
+  if (!clippingEnabled) {
+    ctScanActive = false;
+    ctScanBtn.classList.remove('active');
+    ctScanBtn.textContent = '▶ 開始';
+  }
+  applyClipping();
+});
+
+// Axis selection
+var axisRadios = document.querySelectorAll('input[name="clip-axis"]');
+axisRadios.forEach(function(radio) {
+  radio.addEventListener('change', function() {
+    clipAxis = this.value;
+    if (modelBounds) setupClipRange(modelBounds);
+    updateClipPlanes();
+    applyClipping();
+  });
+});
+
+clipMinSlider.addEventListener('input', function() {
+  var p = parseFloat(clipMinSlider.value);
+  var q = parseFloat(clipMaxSlider.value);
+  if (p > q) {
+    clipMaxSlider.value = p;
+    clipMaxVal.textContent = p.toFixed(1);
+  }
+  clipMinVal.textContent = p.toFixed(1);
+  updateClipPlanes();
+});
+
+clipMaxSlider.addEventListener('input', function() {
+  var q = parseFloat(clipMaxSlider.value);
+  var p = parseFloat(clipMinSlider.value);
+  if (q < p) {
+    clipMinSlider.value = q;
+    clipMinVal.textContent = q.toFixed(1);
+  }
+  clipMaxVal.textContent = q.toFixed(1);
+  updateClipPlanes();
+});
+
+var ctDirMin = 0;  // -1=down, 0=stop, 1=up
+var ctDirMax = 1;  // default: upper moves up
+var ctPosMin = 0;  // internal float accumulator
+var ctPosMax = 0;
+var ctCamFB = 0;   // forward/back: 1=W(forward), -1=S(back)
+var ctCamLR = 0;   // left/right: 1=D(right), -1=A(left)
+var ctCamUD = 0;   // up/down: 1=E(up), -1=Space(down)
+
+ctScanBtn.addEventListener('click', function() {
+  ctScanActive = !ctScanActive;
+  if (ctScanActive) {
+    ctPosMin = parseFloat(clipMinSlider.value);
+    ctPosMax = parseFloat(clipMaxSlider.value);
+    ctScanBtn.classList.add('active');
+    ctScanBtn.textContent = '■ 停止';
+  } else {
+    ctScanBtn.classList.remove('active');
+    ctScanBtn.textContent = '▶ 開始';
+  }
+});
+
+// Direction button handling
+document.querySelectorAll('.dir-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var target = this.dataset.target;
+    var dir = parseInt(this.dataset.dir);
+    this.parentElement.querySelectorAll('.dir-btn').forEach(function(b) {
+      b.classList.remove('selected');
+    });
+    this.classList.add('selected');
+    if (target === 'min') ctDirMin = dir;
+    else if (target === 'max') ctDirMax = dir;
+    else if (target === 'cam-fb') ctCamFB = dir;
+    else if (target === 'cam-lr') ctCamLR = dir;
+    else if (target === 'cam-ud') ctCamUD = dir;
+  });
+});
+
+shadowEnable.addEventListener('change', function() {
+  var enabled = shadowEnable.checked;
+  renderer.shadowMap.enabled = enabled;
+  dirLight.castShadow = enabled;
+  scene.traverse(function(child) {
+    if (child.isMesh) {
+      child.castShadow = enabled;
+      child.receiveShadow = enabled;
+    }
+  });
+  renderer.shadowMap.needsUpdate = true;
+});
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function updateClipPlanes() {
+  var p = parseFloat(clipMinSlider.value);
+  var q = parseFloat(clipMaxSlider.value);
+
+  if (clipAxis === 'x') {
+    clipPlaneMin.normal.set(1, 0, 0);
+    clipPlaneMax.normal.set(-1, 0, 0);
+  } else if (clipAxis === 'y') {
+    clipPlaneMin.normal.set(0, 1, 0);
+    clipPlaneMax.normal.set(0, -1, 0);
+  } else {
+    clipPlaneMin.normal.set(0, 0, 1);
+    clipPlaneMax.normal.set(0, 0, -1);
+  }
+  clipPlaneMin.constant = -p;
+  clipPlaneMax.constant = q;
+}
+
+function applyClipping() {
+  var planes = clippingEnabled ? [clipPlaneMin, clipPlaneMax] : [];
+  scene.traverse(function(child) {
+    if (child.isMesh && child.material) {
+      var mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(function(mat) {
+        mat.clippingPlanes = planes;
+        mat.clipShadows = true;
+        mat.needsUpdate = true;
+      });
+    }
+  });
+}
+
+function getAxisRange(box) {
+  if (clipAxis === 'x') return { min: box.min.x, max: box.max.x };
+  if (clipAxis === 'y') return { min: box.min.y, max: box.max.y };
+  return { min: box.min.z, max: box.max.z };
+}
+
+function setupClipRange(box) {
+  var range = getAxisRange(box);
+  var step = ((range.max - range.min) / 200).toFixed(2);
+
+  clipMinSlider.min = range.min.toFixed(1);
+  clipMinSlider.max = range.max.toFixed(1);
+  clipMinSlider.step = step;
+  clipMinSlider.value = range.min.toFixed(1);
+  clipMinVal.textContent = range.min.toFixed(1);
+
+  clipMaxSlider.min = range.min.toFixed(1);
+  clipMaxSlider.max = range.max.toFixed(1);
+  clipMaxSlider.step = step;
+  clipMaxSlider.value = range.max.toFixed(1);
+  clipMaxVal.textContent = range.max.toFixed(1);
+
+  updateClipPlanes();
+}
+
+// Pre-load preset definitions
+var PRESETS = {
+  low:      { tex: '1024', shadow: '0',    pr: '1',    aa: false },
+  standard: { tex: '2048', shadow: '2048', pr: 'auto', aa: true  },
+  high:     { tex: '4096', shadow: '4096', pr: '2',    aa: true  }
+};
+
+function applyPreset(name) {
+  var p = PRESETS[name];
+  if (!p) return;
+  settingTexSize.value = p.tex;
+  settingShadow.value = p.shadow;
+  settingPixelRatio.value = p.pr;
+  settingAntialias.checked = p.aa;
+}
+
+document.querySelectorAll('.preset-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.preset-btn').forEach(function(b) {
+      b.classList.remove('selected');
+    });
+    this.classList.add('selected');
+    applyPreset(this.dataset.preset);
+  });
+});
+
+// Clear preset selection when individual setting changes
+[settingTexSize, settingShadow, settingPixelRatio, settingAntialias].forEach(function(el) {
+  el.addEventListener('change', function() {
+    document.querySelectorAll('.preset-btn').forEach(function(b) {
+      b.classList.remove('selected');
+    });
+  });
+});
+
+// Apply pre-load settings to renderer. Recreates renderer if antialias changed.
+function applyPreLoadSettings() {
+  var texVal = parseInt(settingTexSize.value);
+  maxTextureSize = texVal > 0 ? texVal : Infinity;
+
+  var shadowSize = parseInt(settingShadow.value);
+  if (shadowSize > 0) {
+    shadowEnable.checked = true;
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(shadowSize, shadowSize);
+    if (dirLight.shadow.map) {
+      dirLight.shadow.map.dispose();
+      dirLight.shadow.map = null;
+    }
+  } else {
+    shadowEnable.checked = false;
+    dirLight.castShadow = false;
+  }
+
+  var prVal = settingPixelRatio.value;
+  var pixelRatio = prVal === 'auto' ? Math.min(window.devicePixelRatio, 2) : parseFloat(prVal);
+
+  var wantAA = settingAntialias.checked;
+  var currentAA = renderer.getContext().getContextAttributes().antialias;
+
+  if (wantAA !== currentAA) {
+    recreateRenderer({ antialias: wantAA, pixelRatio: pixelRatio, shadowEnabled: shadowSize > 0 });
+  } else {
+    renderer.setPixelRatio(pixelRatio);
+    renderer.shadowMap.enabled = shadowSize > 0;
+    renderer.shadowMap.needsUpdate = true;
+  }
+}
+
+// If software rendering was detected at startup, default the UI to the low-memory preset
+if (isSoftwareRendering) {
+  applyPreset('low');
+  document.querySelectorAll('.preset-btn').forEach(function(b) {
+    b.classList.toggle('selected', b.dataset.preset === 'low');
+  });
+}
+
+// File selection button
+fileBtnEl.addEventListener('click', function() { fileInputEl.click(); });
+fileInputEl.addEventListener('change', function(e) {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// Drag & drop
+dropZoneEl.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  dropZoneEl.classList.add('drag-over');
+});
+dropZoneEl.addEventListener('dragleave', function() {
+  dropZoneEl.classList.remove('drag-over');
+});
+dropZoneEl.addEventListener('drop', function(e) {
+  e.preventDefault();
+  dropZoneEl.classList.remove('drag-over');
+  var file = e.dataTransfer.files[0];
+  if (file && (file.name.endsWith('.glb') || file.name.endsWith('.gltf'))) {
+    handleFile(file);
+  }
+});
+
+function handleFile(file) {
+  fileSelectEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+  loadingTextEl.textContent = '読み込み中... (' + formatBytes(file.size) + ')';
+  progressBarEl.style.width = '0%';
+  progressTextEl.textContent = '0%';
+
+  // Apply user-selected settings before loading
+  applyPreLoadSettings();
+
+  var url = URL.createObjectURL(file);
+
+  loader.load(
+    url,
+    function(gltf) {
+      // onLoad
+      URL.revokeObjectURL(url);
+
+      var model = gltf.scene;
+
+      var box = new Box3().setFromObject(model);
+      var size = box.getSize(new Vector3());
+      var center = box.getCenter(new Vector3());
+      modelBounds = box;
+
+      var maxDim = Math.max(size.x, size.y, size.z);
+      camera.position.set(center.x, center.y + 1.6, center.z + maxDim * 0.3);
+
+      // Downscale oversized textures before uploading to GPU
+      downscaleTextures(model, maxTextureSize);
+
+      var shadowEnabled = shadowEnable.checked;
+      model.traverse(function(child) {
+        if (child.isMesh) {
+          child.castShadow = shadowEnabled;
+          child.receiveShadow = shadowEnabled;
+        }
+      });
+
+      scene.add(model);
+      setupClipRange(box);
+      sidePanel.style.display = 'flex';
+      loadingEl.classList.add('hidden');
+    },
+    function(event) {
+      // onProgress
+      if (event.lengthComputable) {
+        var percent = Math.round((event.loaded / event.total) * 100);
+        progressBarEl.style.width = percent + '%';
+        progressTextEl.textContent = percent + '% (' + formatBytes(event.loaded) + ' / ' + formatBytes(event.total) + ')';
+      } else {
+        progressTextEl.textContent = formatBytes(event.loaded) + ' 読み込み済み';
+      }
+    },
+    function(error) {
+      // onError
+      URL.revokeObjectURL(url);
+      console.error('GLB load error:', error);
+      loadingTextEl.textContent = 'モデルの読み込みに失敗しました。';
+      progressBarEl.style.width = '0%';
+      progressTextEl.textContent = '';
+    }
+  );
+}
+
+// Pointer Lock controls
+var euler = new Euler(0, 0, 0, 'YXZ');
+var PI_2 = Math.PI / 2;
+
+document.addEventListener('click', function(e) {
+  if (!fileSelectEl.classList.contains('hidden')) return;
+  if (sidePanel.contains(e.target)) return;
+  renderer.domElement.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', function() {
+  // Hide side panel while navigating; show when pointer lock is released (ESC)
+  var locked = document.pointerLockElement === renderer.domElement;
+  sidePanel.style.display = locked ? 'none' : 'flex';
+});
+
+document.addEventListener('mousemove', function(e) {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  var sensitivity = 0.002;
+  euler.setFromQuaternion(camera.quaternion);
+  euler.y -= e.movementX * sensitivity;
+  euler.x -= e.movementY * sensitivity;
+  euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+  camera.quaternion.setFromEuler(euler);
+});
+
+// Movement
+var keys = {};
+document.addEventListener('keydown', function(e) { keys[e.code] = true; });
+document.addEventListener('keyup', function(e) { keys[e.code] = false; });
+
+var velocity = new Vector3();
+var direction = new Vector3();
+var clock = new Clock();
+
+function animate() {
+  animationId = requestAnimationFrame(animate);
+
+  var delta = Math.min(clock.getDelta(), 0.1);
+
+  if (document.pointerLockElement === renderer.domElement) {
+    direction.set(0, 0, 0);
+    if (keys['KeyW'] || keys['ArrowUp']) direction.z -= 1;
+    if (keys['KeyS'] || keys['ArrowDown']) direction.z += 1;
+    if (keys['KeyA'] || keys['ArrowLeft']) direction.x -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) direction.x += 1;
+    direction.normalize();
+
+    var forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    forward.y = 0;
+    forward.normalize();
+    var right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    right.y = 0;
+    right.normalize();
+
+    velocity.set(0, 0, 0);
+    velocity.addScaledVector(right, direction.x);
+    velocity.addScaledVector(forward, -direction.z);
+
+    if (keys['KeyE']) velocity.y += 1;
+    if (keys['Space']) velocity.y -= 1;
+
+    if (velocity.length() > 0) {
+      velocity.normalize();
+    }
+
+    camera.position.addScaledVector(velocity, moveSpeed * delta);
+  }
+
+  // CT Scan auto-move (fixed timestep to prevent frame skipping)
+  if (ctScanActive && clippingEnabled && modelBounds) {
+    var range = getAxisRange(modelBounds);
+    var ctDelta = Math.min(delta, 1 / 60);
+    var step = moveSpeed * ctDelta;
+
+    if (ctDirMin !== 0) {
+      ctPosMin += step * ctDirMin;
+      if (ctPosMin < range.min) ctPosMin = range.min;
+      if (ctPosMin > range.max) ctPosMin = range.max;
+    }
+    if (ctDirMax !== 0) {
+      ctPosMax += step * ctDirMax;
+      if (ctPosMax < range.min) ctPosMax = range.min;
+      if (ctPosMax > range.max) ctPosMax = range.max;
+    }
+
+    if (ctDirMin !== 0 || ctDirMax !== 0) {
+      clipMinSlider.value = ctPosMin;
+      clipMaxSlider.value = ctPosMax;
+      clipMinVal.textContent = ctPosMin.toFixed(1);
+      clipMaxVal.textContent = ctPosMax.toFixed(1);
+      updateClipPlanes();
+    }
+
+    // Auto camera movement
+    if (ctCamFB !== 0 || ctCamLR !== 0 || ctCamUD !== 0) {
+      var camFwd = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      camFwd.y = 0;
+      camFwd.normalize();
+      var camRight = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      camRight.y = 0;
+      camRight.normalize();
+
+      var camVel = new Vector3();
+      if (ctCamFB !== 0) camVel.addScaledVector(camFwd, ctCamFB);
+      if (ctCamLR !== 0) camVel.addScaledVector(camRight, ctCamLR);
+      if (ctCamUD !== 0) camVel.y += ctCamUD;
+      if (camVel.length() > 0) camVel.normalize();
+      camera.position.addScaledVector(camVel, step);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener('resize', function() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+
+</body>
+</html>
