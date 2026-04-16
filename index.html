@@ -411,31 +411,31 @@
         <label><input type="radio" name="clip-axis" value="z"> Z</label>
       </div>
       <label>
-        <span>下限</span>
-        <input type="range" id="clip-min-slider" min="0" max="100" step="0.1" value="0">
-        <span class="val" id="clip-min-val">0.0</span>
-      </label>
-      <label>
         <span>上限</span>
         <input type="range" id="clip-max-slider" min="0" max="100" step="0.1" value="100">
         <span class="val" id="clip-max-val">100.0</span>
       </label>
+      <label>
+        <span>下限</span>
+        <input type="range" id="clip-min-slider" min="0" max="100" step="0.1" value="0">
+        <span class="val" id="clip-min-val">0.0</span>
+      </label>
       <hr style="margin:10px 0 8px">
       <div style="font-size:12px;color:#aaa;margin-bottom:6px">CTスキャン</div>
-      <div class="ct-dir-row">
-        <span class="ct-dir-label">下限</span>
-        <div class="dir-btn-group">
-          <button class="dir-btn" data-target="min" data-dir="-1">▼</button>
-          <button class="dir-btn selected" data-target="min" data-dir="0">■</button>
-          <button class="dir-btn" data-target="min" data-dir="1">▲</button>
-        </div>
-      </div>
       <div class="ct-dir-row">
         <span class="ct-dir-label">上限</span>
         <div class="dir-btn-group">
           <button class="dir-btn" data-target="max" data-dir="-1">▼</button>
           <button class="dir-btn" data-target="max" data-dir="0">■</button>
           <button class="dir-btn selected" data-target="max" data-dir="1">▲</button>
+        </div>
+      </div>
+      <div class="ct-dir-row">
+        <span class="ct-dir-label">下限</span>
+        <div class="dir-btn-group">
+          <button class="dir-btn" data-target="min" data-dir="-1">▼</button>
+          <button class="dir-btn selected" data-target="min" data-dir="0">■</button>
+          <button class="dir-btn" data-target="min" data-dir="1">▲</button>
         </div>
       </div>
       <hr style="margin:8px 0 6px">
