@@ -356,6 +356,16 @@
     <div class="setting-row">
       <label><input type="checkbox" id="setting-antialias" checked>アンチエイリアス</label>
     </div>
+    <div class="setting-row">
+      <label>並列デコード数</label>
+      <select id="setting-concurrent">
+        <option value="1">1 (低速・安定)</option>
+        <option value="2">2</option>
+        <option value="4" selected>4 (標準)</option>
+        <option value="8">8</option>
+        <option value="16">16 (高速)</option>
+      </select>
+    </div>
     <div class="settings-hint">低メモリ: 8GB環境向け / 高品質: 広報撮影向け</div>
   </div>
   <div id="drop-zone">
@@ -695,6 +705,71 @@ var clipAxis = 'y';
 var ctScanActive = false;
 var ctScanPos = 0;
 
+// === file:// fix: bypass intermediate blob:null/* URLs for embedded textures ===
+// GLTFLoader creates a sub-Blob per embedded texture and passes its Object URL to
+// ImageBitmapLoader, which then fetch()es that URL. On file:// origin, those URLs
+// become blob:null/<uuid> and a subset of fetches fail intermittently in Firefox
+// when many are issued in parallel against a 1.3GB parent Blob. We:
+//   1. Wrap URL.createObjectURL to remember Blob -> URL mapping
+//   2. Replace ImageBitmapLoader.prototype.load to call createImageBitmap(blob)
+//      directly when we have the underlying Blob (no fetch round-trip)
+//   3. Throttle decodes to a user-configurable concurrency to bound peak memory
+var textureDecodeConcurrency = 4;
+(function patchImageBitmapLoaderForFileURL() {
+  if (typeof createImageBitmap !== 'function' || !THREE.ImageBitmapLoader) return;
+  var blobByURL = new Map();
+  var origCreate = URL.createObjectURL.bind(URL);
+  var origRevoke = URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL = function(obj) {
+    var url = origCreate(obj);
+    if (obj instanceof Blob) blobByURL.set(url, obj);
+    return url;
+  };
+  URL.revokeObjectURL = function(url) {
+    blobByURL.delete(url);
+    return origRevoke(url);
+  };
+
+  var inflight = 0;
+  var queue = [];
+  function pump() {
+    while (inflight < textureDecodeConcurrency && queue.length) {
+      var task = queue.shift();
+      inflight++;
+      task().then(function(){ inflight--; pump(); }, function(){ inflight--; pump(); });
+    }
+  }
+  function enqueue(fn) {
+    return new Promise(function(resolve, reject) {
+      queue.push(function(){ return Promise.resolve().then(fn).then(resolve, reject); });
+      pump();
+    });
+  }
+
+  var origLoad = THREE.ImageBitmapLoader.prototype.load;
+  THREE.ImageBitmapLoader.prototype.load = function(url, onLoad, onProgress, onError) {
+    var blob = blobByURL.get(url);
+    if (!blob) return origLoad.call(this, url, onLoad, onProgress, onError);
+    var scope = this;
+    if (scope.manager) scope.manager.itemStart(url);
+    enqueue(function() {
+      var opts = Object.assign({}, scope.options || {}, { colorSpaceConversion: 'none' });
+      return createImageBitmap(blob, opts);
+    }).then(function(bitmap) {
+      if (onLoad) onLoad(bitmap);
+      if (scope.manager) scope.manager.itemEnd(url);
+    }, function(err) {
+      console.error('createImageBitmap failed for', url, err);
+      if (onError) onError(err);
+      if (scope.manager) {
+        scope.manager.itemError(url);
+        scope.manager.itemEnd(url);
+      }
+    });
+  };
+})();
+// === END file:// fix ===
+
 // GLTFLoader + DRACOLoader
 var loader = new GLTFLoader();
 var dracoLoader = new DRACOLoader();
@@ -748,6 +823,7 @@ var settingTexSize = document.getElementById('setting-tex-size');
 var settingShadow = document.getElementById('setting-shadow');
 var settingPixelRatio = document.getElementById('setting-pixel-ratio');
 var settingAntialias = document.getElementById('setting-antialias');
+var settingConcurrent = document.getElementById('setting-concurrent');
 
 var moveSpeed = 1.0;
 var modelBounds = null;
@@ -923,9 +999,9 @@ function setupClipRange(box) {
 
 // Pre-load preset definitions
 var PRESETS = {
-  low:      { tex: '1024', shadow: '0',    pr: '1',    aa: false },
-  standard: { tex: '2048', shadow: '2048', pr: 'auto', aa: true  },
-  high:     { tex: '4096', shadow: '4096', pr: '2',    aa: true  }
+  low:      { tex: '1024', shadow: '0',    pr: '1',    aa: false, conc: '2' },
+  standard: { tex: '2048', shadow: '2048', pr: 'auto', aa: true,  conc: '4' },
+  high:     { tex: '4096', shadow: '4096', pr: '2',    aa: true,  conc: '8' }
 };
 
 function applyPreset(name) {
@@ -935,6 +1011,7 @@ function applyPreset(name) {
   settingShadow.value = p.shadow;
   settingPixelRatio.value = p.pr;
   settingAntialias.checked = p.aa;
+  settingConcurrent.value = p.conc;
 }
 
 document.querySelectorAll('.preset-btn').forEach(function(btn) {
@@ -948,7 +1025,7 @@ document.querySelectorAll('.preset-btn').forEach(function(btn) {
 });
 
 // Clear preset selection when individual setting changes
-[settingTexSize, settingShadow, settingPixelRatio, settingAntialias].forEach(function(el) {
+[settingTexSize, settingShadow, settingPixelRatio, settingAntialias, settingConcurrent].forEach(function(el) {
   el.addEventListener('change', function() {
     document.querySelectorAll('.preset-btn').forEach(function(b) {
       b.classList.remove('selected');
@@ -960,6 +1037,9 @@ document.querySelectorAll('.preset-btn').forEach(function(btn) {
 function applyPreLoadSettings() {
   var texVal = parseInt(settingTexSize.value);
   maxTextureSize = texVal > 0 ? texVal : Infinity;
+
+  var concVal = parseInt(settingConcurrent.value);
+  if (concVal > 0) textureDecodeConcurrency = concVal;
 
   var shadowSize = parseInt(settingShadow.value);
   if (shadowSize > 0) {
